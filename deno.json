@@ -1,0 +1,7 @@
+{
+  "tasks": {
+    "dev": "deno run --allow-net --allow-read --allow-env --allow-sys server.js",
+    "check": "deno check server.js brett.js steine.js zug.js woerter.js probe.js public/app.js",
+    "probe": "deno run --allow-net --allow-read --allow-env probe.js"
+  }
+}

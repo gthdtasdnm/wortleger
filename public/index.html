@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0a0612">
+<title>Wortleger</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔤</text></svg>">
+</head>
+<body>
+
+<div id="status"></div>
+<div id="toast"></div>
+
+<section id="screen-home" class="screen active">
+  <div class="home">
+    <h1 class="logo">WORT<span>leger</span></h1>
+    <p class="tag">Buchstaben aufs Brett</p>
+
+    <label class="field-label" for="name">Dein Name</label>
+    <input id="name" maxlength="12" placeholder="z.&nbsp;B. Mo" autocomplete="nickname">
+
+    <div class="setting">
+      <span class="setting-label">Bedenkzeit</span>
+      <div class="segmented">
+        <button class="seg" data-zeit="60">1 min</button>
+        <button class="seg sel" data-zeit="120">2 min</button>
+        <button class="seg" data-zeit="240">4 min</button>
+        <button class="seg" data-zeit="0">ohne</button>
+      </div>
+    </div>
+
+    <div class="setting">
+      <span class="setting-label">Sichtbar</span>
+      <div class="segmented">
+        <button class="seg sel" data-vis="public">Öffentlich</button>
+        <button class="seg" data-vis="private">Privat</button>
+      </div>
+    </div>
+    <button id="createBtn" class="btn primary big">Raum eröffnen</button>
+
+    <div class="or"><span>oder beitreten</span></div>
+
+    <div class="rooms-head">Offene Räume <span id="roomsCount"></span></div>
+    <div id="roomList" class="roomlist"></div>
+
+    <div class="joinrow">
+      <input id="codeInput" maxlength="5" placeholder="CODE" autocapitalize="characters"
+             autocomplete="off" spellcheck="false">
+      <button id="joinBtn" class="btn">Mit Code</button>
+    </div>
+
+    <button id="helpBtn" class="btn ghost small">Wie geht das?</button>
+  </div>
+</section>
+
+<section id="screen-lobby" class="screen">
+  <div class="lobby">
+    <div class="codebox">
+      <span class="codebox-label">Raumcode</span>
+      <strong id="roomCode">····</strong>
+      <span id="roomVis" class="codebox-vis"></span>
+      <button id="copyBtn" class="btn ghost small">Link kopieren</button>
+    </div>
+
+    <div class="lobby-head"><h2>Spieler <span id="lobbyCount">1/4</span></h2></div>
+    <div id="playerList" class="seats"></div>
+
+    <div id="hostControls" hidden>
+      <div class="setting">
+        <span class="setting-label">Bedenkzeit</span>
+        <div class="segmented">
+          <button class="seg" data-lobbyzeit="60">1 min</button>
+          <button class="seg" data-lobbyzeit="120">2 min</button>
+          <button class="seg" data-lobbyzeit="240">4 min</button>
+          <button class="seg" data-lobbyzeit="0">ohne</button>
+        </div>
+      </div>
+      <div class="setting">
+        <span class="setting-label">Sichtbar</span>
+        <div class="segmented">
+          <button class="seg" data-lobbyvis="public">Öffentlich</button>
+          <button class="seg" data-lobbyvis="private">Privat</button>
+        </div>
+      </div>
+      <button id="startBtn" class="btn primary big">Los geht's</button>
+      <p id="startHint" class="hintline"></p>
+    </div>
+
+    <div id="guestControls" hidden>
+      <button id="readyBtn" class="btn big">Bereit!</button>
+      <p class="hintline">Der Host startet, sobald alle bereit sind.</p>
+    </div>
+
+    <button id="leaveBtn" class="btn ghost small">Raum verlassen</button>
+  </div>
+</section>
+
+<section id="screen-game" class="screen">
+  <div class="game">
+    <header class="topbar">
+      <div class="tb-runde">Zug <strong id="rundeNo">1</strong></div>
+      <div id="uhr"></div>
+      <div class="tb-beutel">Beutel <b id="beutelZahl">0</b></div>
+      <button id="endeBtn" class="btn ghost sm" hidden>Beenden</button>
+    </header>
+
+    <div id="dran">…</div>
+
+    <div id="brett"></div>
+
+    <p id="letzter"></p>
+
+    <div id="regal" class="regalzeile"></div>
+
+    <div id="aktionen" class="aktionen"></div>
+    <div id="punktleiste" class="punktleiste"></div>
+  </div>
+</section>
+
+<section id="screen-final" class="screen">
+  <div class="final">
+    <h2 class="final-title">Endstand</h2>
+    <p id="finalSub" class="hintline"></p>
+    <ol id="podium" class="podium"></ol>
+    <button id="againBtn" class="btn big">Nochmal!</button>
+    <p id="againHint" class="hintline">Der Host holt alle zurück in den Warteraum.</p>
+  </div>
+</section>
+
+<div id="jokerwahl" hidden>
+  <div class="joker-inner">
+    <h2>Welcher Buchstabe?</h2>
+    <p class="hintline">Der Joker zählt null Punkte – aber er passt überall.</p>
+    <div class="jokerraster" id="jokerRaster"></div>
+    <button id="jokerAbbruch" class="btn ghost small">Doch nicht</button>
+  </div>
+</div>
+
+<div id="help" hidden>
+  <div class="help-inner">
+    <h2>So läuft eine Partie</h2>
+    <ul>
+      <li>Zu zweit bis zu viert. Jeder hat sein eigenes Gerät und sieben Steine, die nur er sieht.</li>
+      <li>Reihum ist einer am Zug. Tippe einen Stein im Regal an, dann ein freies Feld – so legst du ihn ab. Nochmal antippen holt ihn zurück.</li>
+      <li>Das <b>erste Wort</b> muss durch den Stern in der Mitte. Danach muss jedes neue Wort an etwas anschließen, das schon liegt.</li>
+      <li>Ein Zug legt Steine <b>in einer Reihe oder einer Spalte</b>, ohne Lücke. Alles, was dabei entsteht – auch quer –, muss ein Wort sein.</li>
+      <li>Geprüft wird gegen eine deutsche Wortliste mit gut 500 000 Einträgen. Umlaute haben eigene Steine, ß wird als SS geschrieben.</li>
+      <li>Alle sieben Steine in einem Zug: <b>40 Punkte Zuschlag</b>.</li>
+      <li>Statt zu legen kannst du <b>tauschen</b> (Steine zurück in den Beutel) oder <b>passen</b>. Zwei Runden lang nur Tauschen und Passen beenden die Partie.</li>
+      <li>Wer zuerst sein Regal leer hat, wenn der Beutel leer ist, bekommt obendrauf, was die anderen noch halten. Alle anderen ziehen ihre Reststeine ab.</li>
+    </ul>
+
+    <h3>Die Felder</h3>
+    <ul class="legende">
+      <li><i class="l-dl"></i> Buchstabe zählt doppelt</li>
+      <li><i class="l-tl"></i> Buchstabe zählt dreifach</li>
+      <li><i class="l-dw"></i> Wort zählt doppelt</li>
+      <li><i class="l-tw"></i> Wort zählt dreifach</li>
+    </ul>
+    <p class="hintline" style="text-align:left">Ein Bonusfeld zählt nur in dem Zug, in dem es belegt wird.</p>
+
+    <button id="helpClose" class="btn">Alles klar</button>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
