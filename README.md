@@ -67,8 +67,10 @@ Gemessen auf diesem Server, gleiche Datei, gleicher Deno:
 | `new Set(text.split("\n"))` | 291 ms | 128 MB |
 | Bytepuffer + binäre Suche | **19 ms** | **62 MB** |
 
-Auf einer Kiste, die neben elf Spielen auch Nextcloud und zwei Bots trägt, sind
-66 MB je Neustart ein Unterschied – und `Restart=always` startet öfter, als man
+Der laufende Dienst braucht damit **25 MB** gegenüber 17 MB bei den Spielen
+ohne Wortliste (`systemctl show wortleger -p MemoryCurrent`). Auf einer Kiste,
+die neben elf Spielen auch Nextcloud und zwei Bots trägt, ist der Unterschied
+zum `Set` je Neustart deutlich – und `Restart=always` startet öfter, als man
 denkt. `woerter.js` behält deshalb die rohe UTF-8-Datei als `Uint8Array` und
 legt nur eine `Uint32Array` mit den Zeilenanfängen daneben. Eine Abfrage kostet
 gemessene 1,1 Mikrosekunden.

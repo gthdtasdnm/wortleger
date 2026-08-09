@@ -24,9 +24,11 @@
 //   new Set(text.split("\n"))   291 ms Start   128 MB RSS
 //   dieser Bytepuffer            19 ms Start    62 MB RSS
 //
-// Auf einer Kiste, die neben zehn Spielen auch Nextcloud und zwei Bots traegt,
-// sind 66 MB je Neustart ein Unterschied – und `Restart=always` startet oefter
-// als man denkt. Der Puffer bleibt die rohe UTF-8-Datei; dazu kommt nur eine
+// Der laufende Dienst braucht damit 25 MB (`systemctl show wortleger -p
+// MemoryCurrent`) gegenueber 17 MB bei den Spielen ohne Wortliste. Auf einer
+// Kiste, die neben elf Spielen auch Nextcloud und zwei Bots traegt, ist der
+// Unterschied zum Set je Neustart deutlich – und `Restart=always` startet
+// oefter als man denkt. Der Puffer bleibt die rohe UTF-8-Datei; dazu kommt nur eine
 // Uint32Array mit den Zeilenanfaengen. Gesucht wird binaer, Byte fuer Byte.
 // Eine Abfrage kostet gemessene 1,1 Mikrosekunden – bei hoechstens ein paar
 // Woertern je Zug ist das nicht messbar.
