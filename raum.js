@@ -15,6 +15,9 @@
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
+/** Einmal anlegen, nicht bei jedem Namen neu - das Ding ist teuer. */
+const ZEICHEN = new Intl.Segmenter("de", { granularity: "grapheme" });
+
 export const token = () => crypto.randomUUID();
 
 export function cleanName(raw) {
@@ -22,7 +25,24 @@ export function cleanName(raw) {
   // Die Regex steht bewusst mit \u-Escapes da - als rohe Zeichen geschrieben
   // landen echte Steuerzeichen in dieser Datei.
   const s = String(raw ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim();
-  return s.slice(0, 12) || "Spieler";
+  // Nach *Zeichen* kuerzen, nicht nach Code-Einheiten. `s.slice(0, 12)` zaehlt
+  // UTF-16-Einheiten, und ein Emoji besteht aus zweien. "Anna" plus vier
+  // Fuechsen ist damit ein halbes Zeichen zu lang: abgeschnitten wurde
+  // mitten im vierten Fuchs, und im Raum stand ein Ersatzzeichen. Die Namen
+  // in der Avatarleiste sind genau solche - der Fall ist nicht konstruiert.
+  // `Intl.Segmenter` fasst auch zusammengesetzte Emoji (Familien,
+  // Hautfarben, Flaggen) richtig als ein Zeichen auf.
+  //
+  // Die zweite Grenze ist die wichtigere: zwoelf *Zeichen* koennen beliebig
+  // lang werden, wenn jemand Kombinationszeichen stapelt. Deshalb wird bei
+  // 48 Code-Einheiten abgebrochen - und zwar zwischen zwei Zeichen, nie
+  // mittendrin, sonst waere der Fehler nur verschoben.
+  let kurz = "";
+  for (const z of [...ZEICHEN.segment(s)].slice(0, 12)) {
+    if (kurz.length + z.segment.length > 48) break;
+    kurz += z.segment;
+  }
+  return kurz || "Spieler";
 }
 
 export function shuffle(list) {
