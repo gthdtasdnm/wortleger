@@ -15,6 +15,22 @@
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
+/**
+ * Wie lange ein Socket stumm bleiben darf, bevor die Geisterwache ihn abraeumt.
+ * Der Client meldet sich alle 25 s; zwei ausgefallene Pings plus Puffer.
+ *
+ * Ueber `GEIST_MS` verkuerzbar - nicht fuer den Betrieb, sondern damit
+ * `werkzeug/lobbyprobe.mjs` den Fall in Sekunden statt in Minuten pruefen kann.
+ * Steht der Wert nicht oder fehlt das Recht, bleibt es bei 65 s.
+ */
+function geistVorgabe() {
+  try {
+    const n = Number(Deno.env.get("GEIST_MS"));
+    if (Number.isFinite(n) && n >= 1000) return n;
+  } catch { /* ohne --allow-env: dann eben die Vorgabe */ }
+  return 65_000;
+}
+
 /** Einmal anlegen, nicht bei jedem Namen neu - das Ding ist teuer. */
 const ZEICHEN = new Intl.Segmenter("de", { granularity: "grapheme" });
 
@@ -66,6 +82,7 @@ export function shuffle(list) {
  * @param {object} o.einstellungen     Vorgabe je Raum (wird flach kopiert)
  * @param {number} [o.roomIdleMs]      leerer Raum wird danach abgeraeumt
  * @param {number} [o.seatGraceMs]     so lange bleibt ein Platz nach Abbruch
+ * @param {number} [o.geistMs]         so lange darf ein Socket stumm bleiben
  * @param {() => object} [o.raumfelder]        zusaetzliche Felder je Raum
  * @param {() => object} [o.spielerfelder]     zusaetzliche Felder je Spieler
  * @param {(room) => object} [o.zustandZusatz] zusaetzliche Felder in roomState
@@ -82,6 +99,7 @@ export function raumverwaltung({
   einstellungen,
   roomIdleMs = 5 * 60_000,
   seatGraceMs = 60_000,
+  geistMs = geistVorgabe(),
   raumfelder = () => ({}),
   spielerfelder = () => ({}),
   zustandZusatz = () => ({}),
@@ -257,6 +275,10 @@ export function raumverwaltung({
       punkte: 0,
       ready,
       connected: true,
+      // Wann zuletzt etwas von dieser Verbindung kam. `statisch.js` stempelt
+      // bei jeder Nachricht; der Client meldet sich alle 25 s mit `ping`,
+      // auch wenn niemand etwas tut. Siehe Geisterwache weiter unten.
+      lastSeen: Date.now(),
       ...spielerfelder(),
     };
   }
@@ -269,6 +291,7 @@ export function raumverwaltung({
     ws._player = player;
     player.ws = ws;
     player.connected = true;
+    player.lastSeen = Date.now();
     ensureHost(room);
     send(player, {
       t: "joined",
@@ -292,7 +315,10 @@ export function raumverwaltung({
     if (!room || !player) return;
     ws._room = null;
     ws._player = null;
+    verlasse(room, player, immediate);
+  }
 
+  function verlasse(room, player, immediate) {
     player.connected = false;
     player.ws = null;
     player.ready = false;
@@ -336,6 +362,48 @@ export function raumverwaltung({
     pushRoomList();
   }
 
+  /**
+   * Die Geisterwache.
+   *
+   * Ein Socket, der offen aussieht und keiner mehr ist, ist der Normalfall auf
+   * dem Handy: wer wegwischt, den Bildschirm sperrt oder den Tab schliesst,
+   * schickt kein FIN - der Server sieht bis zum TCP-Timeout einen anwesenden
+   * Spieler. Steht dieser Geist auf dem Hostplatz, wartet die ganze Lobby auf
+   * einen Startknopf, den niemand mehr druecken kann. Genau das war Bugreport 4
+   * (Snake) und der Grund, warum die Runde nie losging.
+   *
+   * `connected` allein ist deshalb kein Nachweis. Der Client meldet sich alle
+   * 25 Sekunden mit `ping`, auch wenn niemand etwas tut; `statisch.js` stempelt
+   * jede eingehende Nachricht auf `lastSeen`. Wer nach zwei ausgefallenen Pings
+   * und etwas Puffer nichts mehr gesagt hat, wird behandelt wie einer, dessen
+   * Verbindung ordentlich zuging - der Platz wird frei, der Host rueckt weiter.
+   *
+   * `geistMs` steht bewusst ueber `seatGraceMs`: erst gilt einer als weg, dann
+   * laeuft seine Karenzzeit. Andersherum verloere ein kurz gestoerter Client
+   * seinen Platz, bevor er ueberhaupt als abwesend gilt.
+   */
+  function geisterPruefen(jetzt = Date.now()) {
+    let gefunden = 0;
+    for (const room of [...rooms.values()]) {
+      for (const player of [...room.players.values()]) {
+        if (!player.connected) continue;
+        if (jetzt - (player.lastSeen ?? jetzt) <= geistMs) continue;
+        gefunden++;
+        const ws = player.ws;
+        if (ws) {
+          ws._room = null;
+          ws._player = null;
+          browsing.delete(ws);
+          try { ws.close(4002, "stumm"); } catch { /* war ja schon tot */ }
+        }
+        verlasse(room, player, false);
+      }
+    }
+    return gefunden;
+  }
+
+  const geisterUhr = setInterval(() => geisterPruefen(), Math.max(5_000, Math.floor(geistMs / 4)));
+
   /** Raeume abraeumen, in denen seit zehn Minuten niemand mehr war. */
   function starteAufraeumen(intervall = 60_000) {
     return setInterval(() => {
@@ -356,7 +424,7 @@ export function raumverwaltung({
     send, raw, broadcast,
     publicPlayers, roomState, pushState, roomList, pushRoomList,
     makePlayer, attach, dropPlayer, releaseSeat,
-    starteAufraeumen,
+    starteAufraeumen, geisterPruefen, geisterUhr,
   };
 }
 
