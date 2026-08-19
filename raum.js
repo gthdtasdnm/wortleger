@@ -82,6 +82,10 @@ export function shuffle(list) {
  * @param {object} o.einstellungen     Vorgabe je Raum (wird flach kopiert)
  * @param {number} [o.roomIdleMs]      leerer Raum wird danach abgeraeumt
  * @param {number} [o.seatGraceMs]     so lange bleibt ein Platz nach Abbruch
+ * @param {number} [o.lobbyGraceMs]    dasselbe, aber im Warteraum. 0 = Platz
+ *                                     sofort frei (Vorgabe, altes Verhalten)
+ * @param {number} [o.hostGraceMs]     so lange behaelt ein abwesender Host sein
+ *                                     Zeichen. 0 = wandert sofort (Vorgabe)
  * @param {number} [o.geistMs]         so lange darf ein Socket stumm bleiben
  * @param {() => object} [o.raumfelder]        zusaetzliche Felder je Raum
  * @param {() => object} [o.spielerfelder]     zusaetzliche Felder je Spieler
@@ -99,6 +103,8 @@ export function raumverwaltung({
   einstellungen,
   roomIdleMs = 5 * 60_000,
   seatGraceMs = 60_000,
+  lobbyGraceMs = 0,
+  hostGraceMs = 0,
   geistMs = geistVorgabe(),
   raumfelder = () => ({}),
   spielerfelder = () => ({}),
@@ -138,6 +144,7 @@ export function raumverwaltung({
       aktuell: null,
       timers: new Set(),
       idleTimer: null,
+      hostTimer: null,
       lastActivity: Date.now(),
       ...raumfelder(),
     };
@@ -164,6 +171,7 @@ export function raumverwaltung({
   function destroyRoom(room) {
     clearTimers(room);
     cancelIdleClose(room);
+    cancelHostWacht(room);
     for (const p of room.players.values()) {
       if (p.dropTimer) clearTimeout(p.dropTimer);
     }
@@ -171,12 +179,44 @@ export function raumverwaltung({
     pushRoomList();
   }
 
+  function cancelHostWacht(room) {
+    if (room.hostTimer) { clearTimeout(room.hostTimer); room.hostTimer = null; }
+  }
+
+  /**
+   * Der Host ist weg, hat aber noch einen Platz. Sein Zeichen wandert erst nach
+   * `hostGraceMs` weiter - vorher gilt er als jemand, der kurz aufs Klo ist.
+   * Ist er vorher zurueck, hat der Tisch nichts gemerkt.
+   *
+   * Ohne diese Uhr sprang das Zeichen bei jedem gesperrten Bildschirm, und wer
+   * zurueckkam, fand seine Runde in fremder Hand.
+   */
+  function hostWacht(room) {
+    if (hostGraceMs <= 0 || room.hostTimer) return;
+    room.hostTimer = setTimeout(() => {
+      room.hostTimer = null;
+      if (room.players.get(room.hostId)?.connected) return;
+      const naechster = anwesende(room)[0];
+      // Niemand da, der uebernehmen koennte: das Zeichen bleibt liegen, wo es
+      // ist. Der Naechste, der hereinkommt, startet die Uhr erneut.
+      if (!naechster) return;
+      room.hostId = naechster.id;
+      pushState(room);
+      pushRoomList();
+    }, hostGraceMs);
+  }
+
   function ensureHost(room) {
     const current = room.players.get(room.hostId);
-    if (current?.connected) return;
+    if (current?.connected) { cancelHostWacht(room); return; }
+    // Mit Hostgnade behaelt ein nur abwesender Host sein Zeichen, solange sein
+    // Platz steht; erst die Uhr oben gibt es weiter. Ohne Gnade (Vorgabe) geht
+    // es sofort an den Naechsten - so war es hier immer.
+    if (hostGraceMs > 0 && current) { hostWacht(room); return; }
     const all = [...room.players.values()];
     const next = all.find((p) => p.connected) ?? all[0];
     room.hostId = next ? next.id : null;
+    cancelHostWacht(room);
   }
 
   const anwesende = (room) =>
@@ -304,9 +344,11 @@ export function raumverwaltung({
   }
 
   /**
-   * Verbindung weg. In der Lobby ist der Platz sofort frei; in einer laufenden
-   * Partie bleibt er `seatGraceMs` lang stehen, damit ein Netzwechsel oder ein
-   * Neuladen nicht aus der Runde wirft.
+   * Verbindung weg. In einer laufenden Partie bleibt der Platz `seatGraceMs`
+   * lang stehen, damit ein Netzwechsel oder ein Neuladen nicht aus der Runde
+   * wirft. Im Warteraum ist er sofort frei - es sei denn, das Spiel gibt eine
+   * `lobbyGraceMs` an: dann gilt dort dieselbe Regel. Das braucht, wer lange
+   * Warteraeume hat, in denen niemand etwas druecken muss.
    */
   function dropPlayer(ws, { immediate = false } = {}) {
     const room = ws._room;
@@ -323,13 +365,14 @@ export function raumverwaltung({
     player.ws = null;
     player.ready = false;
 
-    if (immediate || room.phase === "lobby") {
+    const gnade = room.phase === "lobby" ? lobbyGraceMs : seatGraceMs;
+    if (immediate || gnade <= 0) {
       releaseSeat(room, player.id);
       return;
     }
 
     if (player.dropTimer) clearTimeout(player.dropTimer);
-    player.dropTimer = setTimeout(() => releaseSeat(room, player.id), seatGraceMs);
+    player.dropTimer = setTimeout(() => releaseSeat(room, player.id), gnade);
 
     ensureHost(room);
     // Zwei Haken, und die Reihenfolge ist Absicht: erst den Zustand richtig
@@ -350,6 +393,7 @@ export function raumverwaltung({
     ensureHost(room);
 
     if (room.players.size === 0) {
+      cancelHostWacht(room);
       zurueckZurLobby(room);
       scheduleIdleClose(room);
       pushRoomList();
@@ -420,7 +464,7 @@ export function raumverwaltung({
     rooms, browsing, maxPlayers, minPlayers,
     newCode, createRoom, destroyRoom,
     scheduleIdleClose, cancelIdleClose, clearTimers,
-    ensureHost, anwesende,
+    ensureHost, hostWacht, cancelHostWacht, anwesende,
     send, raw, broadcast,
     publicPlayers, roomState, pushState, roomList, pushRoomList,
     makePlayer, attach, dropPlayer, releaseSeat,
